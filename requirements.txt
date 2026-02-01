@@ -1,6 +1,6 @@
 fastapi
 uvicorn
-tensorflow==2.10.1
+tensorflow
 numpy
 pandas
 pillow

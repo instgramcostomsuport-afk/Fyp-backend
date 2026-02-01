@@ -217,7 +217,7 @@ __pycache__/
 venv/
 
 # ML models
-*.h5
+
 *.pt
 *.pth
 

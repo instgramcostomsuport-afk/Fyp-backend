@@ -1,0 +1,72 @@
+{
+  "model_name": "NutriFoodNet Enhanced (Multi-Version Kaggle Training)",
+  "version": "2.0",
+  "architecture": "InceptionV3 + Enhanced Custom Layers",
+  "input_shape": [
+    299,
+    299,
+    3
+  ],
+  "num_classes": 101,
+  "dataset": "Food-101",
+  "enhanced_layers": {
+    "layer_1": "Conv2D(64, 3x3) + BatchNorm + ReLU",
+    "layer_2": "Conv2D(32, 3x3) + BatchNorm + ReLU",
+    "layer_3": "MaxPooling2D(2x2)",
+    "layer_4": "GlobalAveragePooling2D",
+    "layer_5": "Dense(128, ReLU)",
+    "layer_6": "Dropout(0.3)",
+    "layer_7": "Dense(101, Softmax)"
+  },
+  "performance": {
+    "test_accuracy": 0.6575049757957458,
+    "test_loss": 1.267446517944336,
+    "accuracy_percentage": 65.75
+  },
+  "training_config": {
+    "total_epochs": 50,
+    "phase1_epochs": 20,
+    "phase2a_epochs": 15,
+    "phase2b_epochs": 15,
+    "batch_size": 32,
+    "frozen_learning_rate": 0.001,
+    "finetune_learning_rate": 0.0001,
+    "optimizer": "Adam",
+    "kaggle_multi_version_training": true,
+    "training_phases": {
+      "phase_1": "Frozen InceptionV3 + Enhanced layers training",
+      "phase_2a": "Fine-tuning InceptionV3 (last 30 layers) - Part 1",
+      "phase_2b": "Fine-tuning InceptionV3 (last 30 layers) - Part 2"
+    }
+  },
+  "preprocessing": {
+    "rescale_factor": 255.0,
+    "target_size": [
+      299,
+      299
+    ],
+    "color_mode": "rgb",
+    "data_augmentation": {
+      "shear_range": 0.2,
+      "zoom_range": 0.2,
+      "horizontal_flip": true,
+      "rotation_range": 20,
+      "width_shift_range": 0.2,
+      "height_shift_range": 0.2,
+      "brightness_range": [
+        0.8,
+        1.2
+      ]
+    }
+  },
+  "framework": "tensorflow/keras",
+  "training_environment": "Kaggle Notebooks with GPU",
+  "files": {
+    "model_file": "nutrifoodnet_enhanced_FINAL.h5",
+    "class_mapping": "class_labels_FINAL.json",
+    "training_history": "training_history_FINAL.json",
+    "metadata": "model_metadata_FINAL.json"
+  },
+  "deployment_ready": true,
+  "mobile_conversion_ready": true
+}

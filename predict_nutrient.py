@@ -9,7 +9,7 @@ import sys
 # -------------------------------
 # CONFIG
 # -------------------------------
-MODEL_PATH = "models/nutrfoodnet.h5"
+MODEL_PATH = "models/nutrifoodnet_final.h5"
 CLASS_LABELS_PATH = "models/class_labels.json"
 NUTRITION_CSV = "data/nutrition.csv"
 IMAGE_SIZE = (299, 299)  # Model input size

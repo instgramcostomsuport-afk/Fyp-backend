@@ -137,112 +137,6 @@
 #     allow_headers=["*"],
 # )
 
-# # -----------------------------
-# # 🔥 AI Recommendation (Qwen via API)
-# # -----------------------------
-# def generate_ai_recommendation(nutrition, goal, disease):
-
-#     prompt = f"""
-# You are a professional nutritionist AI.
-
-# User Goal: {goal}
-# Disease: {disease}
-
-# Nutrition Values:
-# Calories: {nutrition.get('calories')}
-# Protein: {nutrition.get('protein')}
-# Carbohydrates: {nutrition.get('carbohydrates')}
-# Fats: {nutrition.get('fats')}
-# Fiber: {nutrition.get('fiber')}
-# Sugars: {nutrition.get('sugars')}
-# Sodium: {nutrition.get('sodium')}
-
-# Give response in this format:
-# 1. Health Verdict (Healthy / Unhealthy)
-# 2. Reason
-# 3. 3-5 practical suggestions
-# """
-
-#     response = requests.post(
-#         "https://openrouter.ai/api/v1/chat/completions",
-#         headers={
-#             "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}",
-#             "Content-Type": "application/json"
-#         },
-#         json={
-#             "model": "qwen/qwen-7b-chat",
-#             "messages": [
-#                 {"role": "user", "content": prompt}
-#             ]
-#         }
-#     )
-
-#     return response.json()["choices"][0]["message"]["content"]
-
-
-# # -----------------------------
-# # Nutrition Prediction Endpoint
-# # -----------------------------
-# @app.post("/predict")
-# async def predict(file: UploadFile = File(...), weight: float = Form(...)):
-
-#     file_location = f"temp_{file.filename}"
-#     with open(file_location, "wb") as f:
-#         f.write(await file.read())
-
-#     result = predict_nutrients(file_location, weight)
-
-#     if os.path.exists(file_location):
-#         os.remove(file_location)
-
-#     return result
-
-
-# # -----------------------------
-# # 🔥 Recommendation Endpoint (UPDATED)
-# # -----------------------------
-# @app.post("/recommend")
-# async def recommend(
-#     calories: float = Form(0.0),
-#     protein: float = Form(0.0),
-#     carbohydrates: float = Form(0.0),
-#     fats: float = Form(0.0),
-#     fiber: float = Form(0.0),
-#     sugars: float = Form(0.0),
-#     sodium: float = Form(0.0),
-#     goal: str = Form("maintain"),
-#     disease: str = Form(None)
-# ):
-#     try:
-#         nutrition = {
-#             "calories": float(calories),
-#             "protein": float(protein),
-#             "carbohydrates": float(carbohydrates),
-#             "fats": float(fats),
-#             "fiber": float(fiber),
-#             "sugars": float(sugars),
-#             "sodium": float(sodium)
-#         }
-
-#         ai_response = generate_ai_recommendation(nutrition, goal, disease)
-
-#         return {
-#             "recommendations": [ai_response],
-#             "goal": goal,
-#             "disease": disease
-#         }
-
-#     except Exception as e:
-#         return {"error": str(e)}
-
-
-# # Run server
-# if __name__ == "__main__":
-#     import uvicorn
-#     port = int(os.environ.get("PORT", 8000))
-#     uvicorn.run("main:app", host="0.0.0.0", port=port)
-
-
 
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -253,29 +147,30 @@ import requests
 
 app = FastAPI()
 
+# -----------------------------
 # Ensure model is downloaded
+# -----------------------------
 download_model()
 
-# Enable CORS
+# -----------------------------
+# Enable CORS for frontend requests
+# -----------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # change in production
+    allow_origins=["*"],  # Change to your frontend URL in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # -----------------------------
-# 🔥 AI Recommendation (Qwen via API)
+# 🔥 AI Recommendation (Qwen via OpenRouter API)
 # -----------------------------
-def generate_ai_recommendation(nutrition, goal, disease):
-
+def generate_ai_recommendation(nutrition: dict, goal: str, disease: str):
     prompt = f"""
 You are a professional nutritionist AI.
-
 User Goal: {goal}
 Disease: {disease}
-
 Nutrition Values:
 Calories: {nutrition.get('calories')}
 Protein: {nutrition.get('protein')}
@@ -299,35 +194,31 @@ Give response in this format:
         },
         json={
             "model": "qwen/qwen-7b-chat",
-            "messages": [
-                {"role": "user", "content": prompt}
-            ]
+            "messages": [{"role": "user", "content": prompt}]
         }
     )
-
+    
     return response.json()["choices"][0]["message"]["content"]
-
 
 # -----------------------------
 # Nutrition Prediction Endpoint
 # -----------------------------
 @app.post("/predict")
 async def predict(file: UploadFile = File(...), weight: float = Form(...)):
-
     file_location = f"temp_{file.filename}"
     with open(file_location, "wb") as f:
         f.write(await file.read())
-
-    result = predict_nutrients(file_location, weight)
-
-    if os.path.exists(file_location):
-        os.remove(file_location)
-
+    
+    try:
+        result = predict_nutrients(file_location, weight)
+    finally:
+        if os.path.exists(file_location):
+            os.remove(file_location)
+    
     return result
 
-
 # -----------------------------
-# 🔥 Recommendation Endpoint (UPDATED)
+# 🔥 Recommendation Endpoint
 # -----------------------------
 @app.post("/recommend")
 async def recommend(
@@ -351,20 +242,18 @@ async def recommend(
             "sugars": float(sugars),
             "sodium": float(sodium)
         }
-
         ai_response = generate_ai_recommendation(nutrition, goal, disease)
-
         return {
             "recommendations": [ai_response],
             "goal": goal,
             "disease": disease
         }
-
     except Exception as e:
         return {"error": str(e)}
 
-
+# -----------------------------
 # Run server
+# -----------------------------
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))

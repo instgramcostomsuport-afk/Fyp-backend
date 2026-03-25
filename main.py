@@ -160,7 +160,7 @@ download_model()
 # -----------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://fyp-project1.netlify.app/"],  # replace with frontend URL in production
+    allow_origins=["*"],  # replace with frontend URL in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -174,12 +174,12 @@ async def check_env():
     return {"OPENROUTER_API_KEY": os.getenv("OPENROUTER_API_KEY")}
 
 # -----------------------------
-# AI Recommendation via Qwen with full error logging
+# AI Recommendation via Qwen with fallback
 # -----------------------------
 def generate_ai_recommendation(nutrition: dict, goal: str, disease: str):
     api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
-        raise Exception("OPENROUTER_API_KEY not set in environment variables!")
+        raise Exception("OPENROUTER_API_KEY not set!")
 
     prompt = f"""
 You are a professional nutritionist AI.
@@ -200,26 +200,38 @@ Give response in this format:
 3. 3-5 practical suggestions
 """
 
-    response = requests.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        },
-        json={
-            "model": "qwen/qwen-7b-chat",
-            "messages": [{"role": "user", "content": prompt}]
-        }
-    )
+    models_to_try = ["qwen/qwen-7b-chat", "qwen/qwen-7b-mini"]  # fallback to mini if chat fails
+    last_error = None
 
-    # Debug logs
-    print("Status code:", response.status_code)
-    print("Response body:", response.text)
+    for model_name in models_to_try:
+        try:
+            response = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": model_name,
+                    "messages": [{"role": "user", "content": prompt}]
+                },
+                timeout=60
+            )
 
-    if response.status_code != 200:
-        raise Exception(f"OpenRouter API failed: {response.status_code} {response.text}")
+            # Log status and body for debugging
+            print(f"Trying model {model_name}")
+            print("Status code:", response.status_code)
+            print("Response body:", response.text)
 
-    return response.json()["choices"][0]["message"]["content"]
+            if response.status_code == 200:
+                return response.json()["choices"][0]["message"]["content"]
+            else:
+                last_error = f"{model_name} failed with {response.status_code}: {response.text}"
+        except Exception as e:
+            last_error = f"{model_name} request exception: {str(e)}"
+
+    # If all models fail
+    raise Exception(f"All models failed. Last error: {last_error}")
 
 # -----------------------------
 # Nutrition Prediction Endpoint
@@ -270,7 +282,7 @@ async def recommend(
             "disease": disease
         }
     except Exception as e:
-        # Full error output for debugging
+        # Return full error for debugging
         return {"error": str(e)}
 
 # -----------------------------

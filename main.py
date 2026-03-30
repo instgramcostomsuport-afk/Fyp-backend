@@ -301,127 +301,175 @@ from predict_nutrient import predict_nutrients
 from download_model import download_model
 import os
 import requests
+import time
 
 app = FastAPI()
 
 # -----------------------------
-# Download ML model
+# Load Model
 # -----------------------------
 download_model()
 
 # -----------------------------
-# Enable CORS
+# CORS
 # -----------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # replace with frontend URL in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # -----------------------------
-# Debug endpoint to check API key
+# HF CONFIG
 # -----------------------------
-@app.get("/env")
-async def check_env():
-    return {"OPENROUTER_API_KEY": os.getenv("OPENROUTER_API_KEY")}
+HF_TOKEN = "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"
+
+# Primary (DeepSeek)
+HF_URL_PRIMARY = "https://router.huggingface.co/hf-inference/models/deepseek-ai/DeepSeek-V3"
+
+# Fallback (Mistral)
+HF_URL_FALLBACK = "https://router.huggingface.co/hf-inference/models/mistralai/Mistral-7B-Instruct"
+
 
 # -----------------------------
-# AI Recommendation with fallback
+# AI FUNCTION
 # -----------------------------
-def generate_ai_recommendation(nutrition: dict, goal: str, disease: str):
-    api_key = os.getenv("OPENROUTER_API_KEY")
-    if not api_key:
-        raise Exception("OPENROUTER_API_KEY not set!")
+def call_model(url, payload, headers):
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        data = response.json()
+
+        if isinstance(data, list) and "generated_text" in data[0]:
+            return data[0]["generated_text"]
+
+        if isinstance(data, list):
+            return str(data[0])
+
+        if isinstance(data, dict):
+            if "error" in data:
+                return None
+            return str(data)
+
+    except:
+        return None
+
+
+def generate_ai_recommendation(nutrition, goal, disease, age, gender):
 
     prompt = f"""
-You are a professional nutritionist AI.
-User Goal: {goal}
-Disease: {disease}
-Nutrition Values:
-Calories: {nutrition.get('calories')}
-Protein: {nutrition.get('protein')}
-Carbohydrates: {nutrition.get('carbohydrates')}
-Fats: {nutrition.get('fats')}
-Fiber: {nutrition.get('fiber')}
-Sugars: {nutrition.get('sugars')}
-Sodium: {nutrition.get('sodium')}
+You are a professional nutrition expert.
 
-Give response in this format:
-1. Health Verdict (Healthy / Unhealthy)
-2. Reason
-3. 3-5 practical suggestions
+User:
+Age: {age}
+Gender: {gender}
+Goal: {goal}
+Disease: {disease}
+
+Nutrition:
+Calories: {nutrition['calories']}
+Protein: {nutrition['protein']}
+Carbs: {nutrition['carbohydrates']}
+Fats: {nutrition['fats']}
+Fiber: {nutrition['fiber']}
+Sugar: {nutrition['sugars']}
+Sodium: {nutrition['sodium']}
+
+Give clear diet advice in 5 lines.
 """
 
-    models_to_try = ["qwen/qwen-7b-chat", "qwen/qwen-7b-mini"]
-    last_error = None
+    headers = {
+        "Authorization": f"Bearer {HF_TOKEN}"
+    }
 
-    for model_name in models_to_try:
-        try:
-            response = requests.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": model_name,
-                    "messages": [{"role": "user", "content": prompt}]
-                },
-                timeout=60
-            )
+    payload = {
+        "inputs": prompt,
+        "parameters": {
+            "max_new_tokens": 200
+        }
+    }
 
-            # Debug log
-            print(f"Trying model {model_name}")
-            print("Status code:", response.status_code)
-            print("Response body:", response.text)
+    # Try DeepSeek first
+    for _ in range(2):
+        result = call_model(HF_URL_PRIMARY, payload, headers)
+        if result:
+            return result
+        time.sleep(2)
 
-            if response.status_code == 200:
-                return response.json()["choices"][0]["message"]["content"]
-            else:
-                last_error = f"{model_name} failed with {response.status_code}: {response.text}"
-        except Exception as e:
-            last_error = f"{model_name} request exception: {str(e)}"
+    # Fallback → Mistral
+    for _ in range(2):
+        result = call_model(HF_URL_FALLBACK, payload, headers)
+        if result:
+            return result
+        time.sleep(2)
 
-    raise Exception(f"All models failed. Last error: {last_error}")
+    return "AI not responding, try again."
+
 
 # -----------------------------
-# Single endpoint: Predict + Recommend
+# Predict
 # -----------------------------
-@app.post("/analyze")
-async def analyze(
-    file: UploadFile = File(...),
-    weight: float = Form(...),
-    goal: str = Form("maintain"),
-    disease: str = Form(None)
-):
+@app.post("/predict")
+async def predict(file: UploadFile = File(...), weight: float = Form(...)):
+
     file_location = f"temp_{file.filename}"
+
     with open(file_location, "wb") as f:
         f.write(await file.read())
 
-    try:
-        # 1️⃣ Predict nutrients
-        nutrition = predict_nutrients(file_location, weight)
+    result = predict_nutrients(file_location, weight)
 
-        # 2️⃣ Generate AI recommendation
-        ai_recommendation = generate_ai_recommendation(nutrition, goal, disease)
+    if os.path.exists(file_location):
+        os.remove(file_location)
 
-        return {
-            "nutrition": nutrition,
-            "recommendation": ai_recommendation,
-            "goal": goal,
-            "disease": disease
-        }
+    return result
 
-    finally:
-        if os.path.exists(file_location):
-            os.remove(file_location)
 
 # -----------------------------
-# Run server
+# Recommend
 # -----------------------------
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
+@app.post("/recommend")
+async def recommend(
+    calories: float = Form(...),
+    protein: float = Form(...),
+    carbohydrates: float = Form(...),
+    fats: float = Form(...),
+    fiber: float = Form(...),
+    sugars: float = Form(...),
+    sodium: float = Form(...),
+
+    age: int = Form(0),
+    gender: str = Form("unknown"),
+    goal: str = Form("maintain"),
+    disease: str = Form("")
+):
+
+    nutrition = {
+        "calories": calories,
+        "protein": protein,
+        "carbohydrates": carbohydrates,
+        "fats": fats,
+        "fiber": fiber,
+        "sugars": sugars,
+        "sodium": sodium
+    }
+
+    ai_response = generate_ai_recommendation(
+        nutrition,
+        goal,
+        disease,
+        age,
+        gender
+    )
+
+    return {
+        "recommendations": [ai_response],
+        "status": "success"
+    }
+
+
+# -----------------------------
+@app.get("/")
+def home():
+    return {"message": "Nutrition AI Running 🚀"}

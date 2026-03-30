@@ -358,13 +358,50 @@ def call_model(url, payload, headers):
 
 def generate_ai_recommendation(nutrition, goal, disease, age, gender):
 
-    try:
-        print("DEBUG: AI function hit")
+    prompt = f"""
+You are a nutrition expert.
 
-        return "TEST OK - AI FUNCTION WORKING"
+Age: {age}
+Gender: {gender}
+Goal: {goal}
+Disease: {disease}
+
+Calories: {nutrition['calories']}
+Protein: {nutrition['protein']}
+Carbs: {nutrition['carbohydrates']}
+Fats: {nutrition['fats']}
+Fiber: {nutrition['fiber']}
+Sugar: {nutrition['sugars']}
+Sodium: {nutrition['sodium']}
+
+Give 5 line simple human advice.
+"""
+
+    headers = {
+        "Authorization": f"Bearer YOUR_OPENROUTER_KEY"
+    }
+
+    payload = {
+        "model": "deepseek-ai/deepseek-chat",
+        "messages": [
+            {"role": "user", "content": prompt}
+        ]
+    }
+
+    try:
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=25
+        )
+
+        data = response.json()
+
+        return data["choices"][0]["message"]["content"]
 
     except Exception as e:
-        return f"ERROR: {str(e)}"
+        return f"AI Error: {str(e)}"
 
     prompt = f"""
 You are a professional nutrition expert.

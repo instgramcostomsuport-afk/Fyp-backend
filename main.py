@@ -443,22 +443,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# -------------------------
-# GEMINI SETUP (SAFE)
-# -------------------------
-API_KEY = os.getenv("GEMINI_API_KEY")
 
-if not API_KEY:
-    print("WARNING: GEMINI_API_KEY not set!")
-
-genai.configure(api_key=API_KEY)
-
-model = genai.GenerativeModel("gemini-2.5-flash")
-
-
-# -------------------------
-# HOME
-# -------------------------
 @app.post("/predict")
 async def predict(file: UploadFile = File(...), weight: float = Form(...)):
     # Save file temporarily
@@ -475,6 +460,23 @@ async def predict(file: UploadFile = File(...), weight: float = Form(...)):
 
 # # #     # Return nutrition ONLY, frontend will handle user input for recommendation
     return result
+# -------------------------
+# GEMINI SETUP (SAFE)
+# -------------------------
+API_KEY = os.getenv("GEMINI_API_KEY")
+
+if not API_KEY:
+    print("WARNING: GEMINI_API_KEY not set!")
+
+genai.configure(api_key=API_KEY)
+
+model = genai.GenerativeModel("gemini-2.5-flash")
+
+
+# -------------------------
+# HOME
+# -------------------------
+
 
 
 # -------------------------

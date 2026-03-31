@@ -3,18 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from predict_nutrient import predict_nutrients
 from download_model import download_model
 import os
+import uvicorn
 import google.generativeai as genai
 
 app = FastAPI()
 
-# -----------------------------
-# Load Model
-# -----------------------------
-download_model()
-
-# -----------------------------
+# -------------------------
 # CORS
-# -----------------------------
+# -------------------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,72 +19,69 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# -----------------------------
-# 🔥 GEMINI CONFIG
-# -----------------------------
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-
-model = genai.GenerativeModel("gemini-2.0-flash")
-
-
-# -----------------------------
-# AI FUNCTION
-# -----------------------------
-def generate_ai_recommendation(nutrition, goal, disease, age, gender):
-
-    prompt = f"""
-You are a professional nutrition expert.
-
-User Info:
-Age: {age}
-Gender: {gender}
-Goal: {goal}
-Disease: {disease}
-
-Nutrition:
-Calories: {nutrition['calories']}
-Protein: {nutrition['protein']}
-Carbohydrates: {nutrition['carbohydrates']}
-Fats: {nutrition['fats']}
-Fiber: {nutrition['fiber']}
-Sugars: {nutrition['sugars']}
-Sodium: {nutrition['sodium']}
-
-Give response in this format:
-1. Health Verdict
-2. Reason
-3. 3 practical suggestions
-"""
-
+# -------------------------
+# LOAD MODEL ON STARTUP
+# -------------------------
+@app.on_event("startup")
+def load_model():
     try:
-        response = model.generate_content(prompt)
-        return response.text
+        print("📥 Downloading / Loading model...")
+        download_model()
+        print("✅ Model Ready")
     except Exception as e:
-        return f"AI Error: {str(e)}"
+        print("❌ MODEL LOAD ERROR:", str(e))
 
+# -------------------------
+# GEMINI SETUP
+# -------------------------
+API_KEY = os.getenv("GEMINI_API_KEY")
 
-# -----------------------------
-# Predict Endpoint
-# -----------------------------
+if not API_KEY:
+    print("⚠ GEMINI_API_KEY not set")
+
+genai.configure(api_key=API_KEY)
+model = genai.GenerativeModel("gemini-2.5-flash")
+
+# -------------------------
+# HOME
+# -------------------------
+@app.get("/")
+def home():
+    return {"message": "Backend running 🚀"}
+
+# -------------------------
+# PREDICT
+# -------------------------
 @app.post("/predict")
 async def predict(file: UploadFile = File(...), weight: float = Form(...)):
+    try:
+        print("📸 Received file:", file.filename)
 
-    file_location = f"temp_{file.filename}"
+        file_location = f"temp_{file.filename}"
 
-    with open(file_location, "wb") as f:
-        f.write(await file.read())
+        with open(file_location, "wb") as f:
+            content = await file.read()
+            f.write(content)
 
-    result = predict_nutrients(file_location, weight)
+        print("📊 Running model prediction...")
 
-    if os.path.exists(file_location):
-        os.remove(file_location)
+        result = predict_nutrients(file_location, weight)
 
-    return result
+        print("✅ Prediction:", result)
 
+        # delete temp file
+        if os.path.exists(file_location):
+            os.remove(file_location)
 
-# -----------------------------
-# Recommendation Endpoint
-# -----------------------------
+        return result
+
+    except Exception as e:
+        print("❌ PREDICT ERROR:", str(e))
+        return {"error": str(e)}
+
+# -------------------------
+# RECOMMEND (GEMINI)
+# -------------------------
 @app.post("/recommend")
 async def recommend(
     calories: float = Form(...),
@@ -98,40 +91,48 @@ async def recommend(
     fiber: float = Form(...),
     sugars: float = Form(...),
     sodium: float = Form(...),
-
     age: int = Form(0),
-    gender: str = Form("unknown"),
+    gender: str = Form("Unknown"),
     goal: str = Form("maintain"),
     disease: str = Form("")
 ):
+    try:
+        prompt = f"""
+You are a professional nutrition AI.
 
-    nutrition = {
-        "calories": calories,
-        "protein": protein,
-        "carbohydrates": carbohydrates,
-        "fats": fats,
-        "fiber": fiber,
-        "sugars": sugars,
-        "sodium": sodium
-    }
+User:
+Age: {age}
+Gender: {gender}
+Goal: {goal}
+Disease: {disease}
 
-    ai_response = generate_ai_recommendation(
-        nutrition,
-        goal,
-        disease,
-        age,
-        gender
-    )
+Nutrition:
+Calories: {calories}
+Protein: {protein}
+Carbs: {carbohydrates}
+Fats: {fats}
+Fiber: {fiber}
+Sugar: {sugars}
+Sodium: {sodium}
 
-    return {
-        "recommendations": [ai_response],
-        "status": "success"
-    }
+Give 4-6 lines simple advice.
+"""
 
+        response = model.generate_content(prompt)
 
-# -----------------------------
-# Health Check
-# -----------------------------
-@app.get("/")
-def home():
-    return {"message": "Nutrition AI Running 🚀"}
+        return {
+            "recommendations": [response.text]
+        }
+
+    except Exception as e:
+        print("❌ GEMINI ERROR:", str(e))
+        return {
+            "error": str(e),
+            "recommendations": ["AI failed"]
+        }
+
+# -------------------------
+# RUN
+# -------------------------
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -459,24 +459,21 @@ model = genai.GenerativeModel("gemini-2.5-flash")
 # -------------------------
 # HOME
 # -------------------------
-@app.get("/")
-def home():
-    return {"message": "Backend Running Successfully"}
-
-
 @app.post("/predict")
 async def predict(file: UploadFile = File(...), weight: float = Form(...)):
-
+    # Save file temporarily
     file_location = f"temp_{file.filename}"
-
     with open(file_location, "wb") as f:
         f.write(await file.read())
 
+    # Predict nutrition
     result = predict_nutrients(file_location, weight)
 
+    # Remove temp file
     if os.path.exists(file_location):
         os.remove(file_location)
 
+# # #     # Return nutrition ONLY, frontend will handle user input for recommendation
     return result
 
 

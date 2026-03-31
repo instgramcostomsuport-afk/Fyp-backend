@@ -1,7 +1,8 @@
 fastapi
 uvicorn[standard]
 
-tensorflow==2.12.0
+tensorflow==2.9.1
+h5py==3.1.0
 keras==2.12.0
 protobuf==3.20.*
 numpy
@@ -13,8 +14,9 @@ python-multipart
 python-dotenv
 
 scikit-learn
-h5py
+
 
 gdown==5.2.0
 
 google-generativeai
+

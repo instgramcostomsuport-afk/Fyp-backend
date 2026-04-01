@@ -169,7 +169,9 @@ app = FastAPI()
 
 # Ensure model is downloaded
 
-download_model()
+@app.on_event("startup")
+def startup_event():
+    download_model()
 
 
 

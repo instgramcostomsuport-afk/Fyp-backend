@@ -111,7 +111,7 @@ NUTRITION_CSV = os.path.join(BASE_DIR, "data", "nutrition.csv")
 IMAGE_SIZE = (299, 299)
 
 # 🔴 YOUR GOOGLE DRIVE FILE ID HERE
-MODEL_DRIVE_ID = "YOUR_FILE_ID_HERE"
+MODEL_DRIVE_ID = "1ho8wwkADHIVGj1Iq5614A3h7uqbhkrTC"
 
 # -------------------------------
 # GLOBALS

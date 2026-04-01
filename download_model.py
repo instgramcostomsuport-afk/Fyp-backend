@@ -16,7 +16,7 @@ def download_model():
         return
 
     print("📥 Downloading model from Google Drive...")
-    gdown.download(DOWNLOAD_URL, MODEL_PATH, quiet=False, fuzzy=True)
+    gdown.download(DOWNLOAD_URL, MODEL_PATH, quiet=False)
 
     if not os.path.exists(MODEL_PATH):
         raise RuntimeError("❌ Model download failed")

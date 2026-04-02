@@ -55,34 +55,15 @@ def load_model_once():
     if model is None:
         download_model()
         print("Loading ML model...")
-
         try:
             model = tf.keras.models.load_model(
                 MODEL_PATH,
-                compile=False,
-                safe_mode=False
+                compile=False
             )
             print("MODEL LOADED SUCCESSFULLY")
-
         except Exception as e:
-            print(f"First load failed: {e}")
-            print("Trying config fix loader...")
-
-            try:
-                with h5py.File(MODEL_PATH, 'r') as f:
-                    model_config = f.attrs.get('model_config')
-                    if isinstance(model_config, bytes):
-                        model_config = model_config.decode('utf-8')
-                    model_config = model_config.replace(
-                        '"batch_shape"', '"batch_input_shape"'
-                    )
-                model = model_from_json(model_config)
-                model.load_weights(MODEL_PATH)
-                print("MODEL LOADED WITH CONFIG FIX")
-
-            except Exception as e2:
-                print(f"Config fix also failed: {e2}")
-                raise e2
+            print(f"Load failed: {e}")
+            raise e
 
 def load_class_labels_once():
     global class_labels

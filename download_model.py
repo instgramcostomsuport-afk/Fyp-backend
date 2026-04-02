@@ -1,57 +1,31 @@
-# import os
-# import gdown
-
-# MODEL_PATH = "models/nutrifoodnet_final.h5"
-# MODEL_DIR = "models"
-
-# # 🔥 DIRECT DOWNLOAD URL (NOT /view)
-# GDRIVE_FILE_ID = "1ho8wwkADHIVGj1Iq5614A3h7uqbhkrTC"
-# DOWNLOAD_URL = f"https://drive.google.com/uc?id={GDRIVE_FILE_ID}"
-
-# def download_model():
-#     os.makedirs(MODEL_DIR, exist_ok=True)
-
-#     if os.path.exists(MODEL_PATH):
-#         print("✅ Model already exists")
-#         return
-
-#     print("📥 Downloading model from Google Drive...")
-#     gdown.download(DOWNLOAD_URL, MODEL_PATH, quiet=False)
-
-#     if not os.path.exists(MODEL_PATH):
-#         raise RuntimeError("❌ Model download failed")
-
-#     print("✅ Model downloaded successfully")
-
 import os
-import requests
+import gdown
 
 MODEL_PATH = "models/nutrifoodnet_final.h5"
 MODEL_DIR = "models"
-
-DOWNLOAD_URL = "https://drive.google.com/uc?export=download&id=1ho8wwkADHIVGj1Iq5614A3h7uqbhkrTC"
-
+GDRIVE_FILE_ID = "1ho8wwkADHIVGj1Iq5614A3h7uqbhkrTC"
 
 def download_model():
     os.makedirs(MODEL_DIR, exist_ok=True)
 
     if os.path.exists(MODEL_PATH):
-        print("✅ Model already exists")
-        return
+        size = os.path.getsize(MODEL_PATH)
+        if size < 1_000_000:
+            print("⚠️ Model corrupted, re-downloading...")
+            os.remove(MODEL_PATH)
+        else:
+            print(f"✅ Model exists — {size / 1_000_000:.1f} MB")
+            return
 
-    print("📥 Downloading model...")
-
-    response = requests.get(DOWNLOAD_URL, stream=True)
-
-    if response.status_code != 200:
-        raise RuntimeError("❌ Failed to download model")
-
-    with open(MODEL_PATH, "wb") as f:
-        for chunk in response.iter_content(chunk_size=8192):
-            if chunk:
-                f.write(chunk)
+    print("📥 Downloading model from Google Drive...")
+    url = f"https://drive.google.com/uc?id={GDRIVE_FILE_ID}"
+    gdown.download(url, MODEL_PATH, quiet=False, fuzzy=True)
 
     if not os.path.exists(MODEL_PATH):
-        raise RuntimeError("❌ Model not saved")
+        raise RuntimeError("❌ Model download failed")
 
-    print("✅ Model downloaded successfully")
+    size = os.path.getsize(MODEL_PATH)
+    if size < 1_000_000:
+        raise RuntimeError(f"❌ File too small ({size} bytes) — Google returned HTML, not model")
+
+    print(f"✅ Model downloaded — {size / 1_000_000:.1f} MB")

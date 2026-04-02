@@ -1,94 +1,3 @@
-# import tensorflow as tf
-# from tensorflow.keras.preprocessing import image
-# import numpy as np
-# import pandas as pd
-# import json
-# import os
-
-# # -------------------------------
-# # PATHS (Railway-safe)
-# # -------------------------------
-# BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# MODEL_PATH = os.path.join(BASE_DIR, "models", "nutrifoodnet_final.h5")
-# CLASS_LABELS_PATH = os.path.join(BASE_DIR, "models", "class_labels.json")
-# NUTRITION_CSV = os.path.join(BASE_DIR, "data", "nutrition.csv")
-
-# IMAGE_SIZE = (299, 299)
-
-# # -------------------------------
-# # GLOBALS (lazy loaded)
-# # -------------------------------
-# model = None
-# class_labels = None
-# nutrition_df = None
-# numeric_cols = ["weight","calories","protein","carbohydrates","fats","fiber","sugars","sodium"]
-
-# # -------------------------------
-# # LOADERS
-# # -------------------------------
-# def load_model_once():
-#     global model
-#     if model is None:
-#         if not os.path.exists(MODEL_PATH):
-#             raise FileNotFoundError(f"Model not found: {MODEL_PATH}")
-#         print("Loading ML model...")
-#         model = tf.keras.models.load_model(
-#     MODEL_PATH,
-#     compile=False
-# )
-#         print("MODEL LOADED")
-
-# def load_class_labels_once():
-#     global class_labels
-#     if class_labels is None:
-#         with open(CLASS_LABELS_PATH, "r") as f:
-#             class_labels = json.load(f)
-
-# def load_nutrition_once():
-#     global nutrition_df
-#     if nutrition_df is None:
-#         nutrition_df = pd.read_csv(NUTRITION_CSV)
-#         nutrition_df[numeric_cols] = nutrition_df[numeric_cols].astype(float)
-
-# # -------------------------------
-# # PREDICTION FUNCTION
-# # -------------------------------
-# def predict_nutrients(img_path, target_weight=100):
-#     load_model_once()
-#     load_class_labels_once()
-#     load_nutrition_once()
-
-#     img = image.load_img(img_path, target_size=IMAGE_SIZE)
-#     x = image.img_to_array(img)
-#     x = np.expand_dims(x, axis=0) / 255.0
-
-#     pred = model.predict(x)
-#     pred_class_idx = int(np.argmax(pred))
-#     confidence = float(pred[0][pred_class_idx])
-
-#     food_name = class_labels[str(pred_class_idx)]
-
-#     food_rows = nutrition_df[nutrition_df["label"] == food_name]
-#     if food_rows.empty:
-#         return {"error": "Nutrition info not found"}
-
-#     food_rows = food_rows.reset_index(drop=True)
-#     closest_row = food_rows.iloc[(food_rows['weight'] - target_weight).abs().argsort()[0]]
-
-#     result = {
-#         "label": food_name,
-#         "confidence": round(confidence, 4),
-#     }
-
-#     for col in closest_row.index:
-#         result[col] = float(closest_row[col]) if col in numeric_cols else closest_row[col]
-
-#     return result
-
-
-
-
 import tensorflow as tf
 from tensorflow.keras.preprocessing import image
 import numpy as np
@@ -96,10 +5,9 @@ import pandas as pd
 import json
 import os
 import gdown
+import h5py
+from tensorflow.keras.models import model_from_json
 
-# -------------------------------
-# PATHS
-# -------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 MODEL_DIR = os.path.join(BASE_DIR, "models")
@@ -110,12 +18,8 @@ NUTRITION_CSV = os.path.join(BASE_DIR, "data", "nutrition.csv")
 
 IMAGE_SIZE = (299, 299)
 
-# 🔴 YOUR GOOGLE DRIVE FILE ID HERE
 MODEL_DRIVE_ID = "1ho8wwkADHIVGj1Iq5614A3h7uqbhkrTC"
 
-# -------------------------------
-# GLOBALS
-# -------------------------------
 model = None
 class_labels = None
 nutrition_df = None
@@ -125,70 +29,73 @@ numeric_cols = [
     "fats", "fiber", "sugars", "sodium"
 ]
 
-# -------------------------------
-# DOWNLOAD MODEL (ONLY ONCE)
-# -------------------------------
 def download_model():
     if not os.path.exists(MODEL_PATH):
-        print("📥 Downloading model...")
-
+        print("Downloading model...")
         os.makedirs(MODEL_DIR, exist_ok=True)
-
         url = f"https://drive.google.com/uc?id={MODEL_DRIVE_ID}"
-
-        gdown.download(url, MODEL_PATH, quiet=False)
-
-        print("✅ Model downloaded successfully")
+        gdown.download(url, MODEL_PATH, quiet=False, fuzzy=True)
+        if not os.path.exists(MODEL_PATH):
+            raise RuntimeError("Model download failed")
+        size = os.path.getsize(MODEL_PATH)
+        if size < 1_000_000:
+            raise RuntimeError(f"Downloaded file too small ({size} bytes)")
+        print(f"Model downloaded — {size / 1_000_000:.1f} MB")
     else:
-        print("✅ Model already exists")
+        size = os.path.getsize(MODEL_PATH)
+        if size < 1_000_000:
+            print("Model file corrupted, re-downloading...")
+            os.remove(MODEL_PATH)
+            download_model()
+        else:
+            print(f"Model already exists — {size / 1_000_000:.1f} MB")
 
-# -------------------------------
-# LOAD MODEL (FIXED)
-# -------------------------------
 def load_model_once():
     global model
-
     if model is None:
         download_model()
-
-        print("🚀 Loading ML model...")
+        print("Loading ML model...")
 
         try:
             model = tf.keras.models.load_model(
                 MODEL_PATH,
                 compile=False,
-                safe_mode=False  # 🔥 FIX FOR batch_shape ERROR
+                safe_mode=False
             )
-
-            print("✅ MODEL LOADED SUCCESSFULLY")
+            print("MODEL LOADED SUCCESSFULLY")
 
         except Exception as e:
-            print(f"❌ MODEL LOAD FAILED: {e}")
-            raise e
+            print(f"First load failed: {e}")
+            print("Trying config fix loader...")
 
-# -------------------------------
-# LOAD LABELS
-# -------------------------------
+            try:
+                with h5py.File(MODEL_PATH, 'r') as f:
+                    model_config = f.attrs.get('model_config')
+                    if isinstance(model_config, bytes):
+                        model_config = model_config.decode('utf-8')
+                    model_config = model_config.replace(
+                        '"batch_shape"', '"batch_input_shape"'
+                    )
+                model = model_from_json(model_config)
+                model.load_weights(MODEL_PATH)
+                print("MODEL LOADED WITH CONFIG FIX")
+
+            except Exception as e2:
+                print(f"Config fix also failed: {e2}")
+                raise e2
+
 def load_class_labels_once():
     global class_labels
-
     if class_labels is None:
         with open(CLASS_LABELS_PATH, "r") as f:
             class_labels = json.load(f)
 
-# -------------------------------
-# LOAD NUTRITION DATA
-# -------------------------------
 def load_nutrition_once():
     global nutrition_df
-
     if nutrition_df is None:
         nutrition_df = pd.read_csv(NUTRITION_CSV)
         nutrition_df[numeric_cols] = nutrition_df[numeric_cols].astype(float)
 
-# -------------------------------
-# PREDICTION
-# -------------------------------
 def predict_nutrients(img_path, target_weight=100):
     try:
         load_model_once()
@@ -228,5 +135,5 @@ def predict_nutrients(img_path, target_weight=100):
         return result
 
     except Exception as e:
-        print(f"❌ Prediction error: {e}")
+        print(f"Prediction error: {e}")
         return {"error": str(e)}

@@ -7,9 +7,6 @@ import requests
 
 app = FastAPI()
 
-# -------------------------
-# CORS FIRST — before everything
-# -------------------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,9 +15,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# -------------------------
-# DOWNLOAD MODEL ON STARTUP
-# -------------------------
 @app.on_event("startup")
 def startup_event():
     try:
@@ -30,23 +24,15 @@ def startup_event():
     except Exception as e:
         print(f"❌ Startup error: {e}")
 
-# -------------------------
-# HOME
-# -------------------------
 @app.get("/")
 def home():
     return {"message": "Backend running 🚀"}
 
-# -------------------------
-# AI RECOMMENDATION
-# -------------------------
 def generate_ai_recommendation(nutrition, goal, disease):
     prompt = f"""
 You are a professional nutritionist AI.
-
 User Goal: {goal}
 Disease: {disease}
-
 Nutrition Values:
 Calories: {nutrition.get('calories')}
 Protein: {nutrition.get('protein')}
@@ -55,13 +41,11 @@ Fats: {nutrition.get('fats')}
 Fiber: {nutrition.get('fiber')}
 Sugars: {nutrition.get('sugars')}
 Sodium: {nutrition.get('sodium')}
-
 Give response in this format:
 1. Health Verdict (Healthy / Unhealthy)
 2. Reason
 3. 3-5 practical suggestions
 """
-
     response = requests.post(
         "https://openrouter.ai/api/v1/chat/completions",
         headers={
@@ -75,38 +59,25 @@ Give response in this format:
             ]
         }
     )
-
     return response.json()["choices"][0]["message"]["content"]
 
-# -------------------------
-# PREDICT
-# -------------------------
 @app.post("/predict")
 async def predict(file: UploadFile = File(...), weight: float = Form(...)):
     try:
         print("📸 Received file:", file.filename)
-
         file_location = f"temp_{file.filename}"
-
         with open(file_location, "wb") as f:
             f.write(await file.read())
-
         print("📊 Running prediction...")
         result = predict_nutrients(file_location, weight)
         print("✅ Result:", result)
-
         if os.path.exists(file_location):
             os.remove(file_location)
-
         return result
-
     except Exception as e:
         print(f"❌ Predict error: {e}")
         return {"error": str(e)}
 
-# -------------------------
-# RECOMMEND
-# -------------------------
 @app.post("/recommend")
 async def recommend(
     calories: float = Form(0.0),
@@ -129,22 +100,25 @@ async def recommend(
             "sugars": float(sugars),
             "sodium": float(sodium)
         }
-
         ai_response = generate_ai_recommendation(nutrition, goal, disease)
-
         return {
             "recommendations": [ai_response],
             "goal": goal,
             "disease": disease
         }
-
     except Exception as e:
         print(f"❌ Recommend error: {e}")
         return {"error": str(e)}
 
-# -------------------------
-# RUN
-# -------------------------
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
+```
+
+---
+
+**After committing — watch Railway logs. You should see:**
+```
+✅ Model ready
+INFO: Application startup complete

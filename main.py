@@ -133,14 +133,13 @@ from download_model import download_model
 import google.generativeai as genai
 import os
 
-# ====================== FASTAPI APP ======================
 app = FastAPI(title="NutriScan AI Backend")
 
-# ====================== CORS (Important - Updated with your Netlify URL) ======================
+# ==================== CORS (Fixed for your Netlify) ====================
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://fyp-project1.netlify.app",   # Your actual frontend
+        "https://fyp-project1.netlify.app",   # ← Your frontend
         "http://localhost:3000",
         "http://localhost:5173"
     ],
@@ -149,31 +148,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ====================== GEMINI SETUP ======================
+# ==================== GEMINI SETUP ====================
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
 if not GEMINI_API_KEY:
-    raise ValueError("❌ GEMINI_API_KEY is not set in Railway Environment Variables!")
+    raise ValueError("❌ GEMINI_API_KEY is not set!")
 
 genai.configure(api_key=GEMINI_API_KEY)
 gemini_model = genai.GenerativeModel("gemini-2.5-flash")
 
-print("✅ Gemini configured successfully")
+print("✅ Gemini configured")
 
-# ====================== STARTUP EVENT ======================
+# ==================== STARTUP ====================
 @app.on_event("startup")
 async def startup_event():
     try:
-        print("📥 Downloading model from Google Drive...")
+        print("📥 Downloading model...")
         download_model()
-        print("✅ Model downloaded and ready!")
+        print("✅ Model ready!")
     except Exception as e:
-        print(f"⚠️ Model download error: {e}")
+        print(f"Model error: {e}")
 
-# ====================== ROUTES ======================
+# ==================== ROUTES ====================
 @app.get("/")
 async def home():
-    return {"message": "NutriScan AI Backend is running successfully!", "status": "healthy"}
+    return {"message": "Backend is running!", "status": "ok"}
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...), weight: float = Form(...)):
@@ -188,9 +186,8 @@ async def predict(file: UploadFile = File(...), weight: float = Form(...)):
             os.remove(file_location)
 
         return result
-
     except Exception as e:
-        print(f"❌ Predict error: {e}")
+        print(f"Predict Error: {e}")
         return {"error": str(e)}
 
 @app.post("/recommend")
@@ -207,50 +204,36 @@ async def recommend(
 ):
     try:
         nutrition = {
-            "calories": float(calories),
-            "protein": float(protein),
-            "carbohydrates": float(carbohydrates),
-            "fats": float(fats),
-            "fiber": float(fiber),
-            "sugars": float(sugars),
-            "sodium": float(sodium)
+            "calories": calories, "protein": protein, "carbohydrates": carbohydrates,
+            "fats": fats, "fiber": fiber, "sugars": sugars, "sodium": sodium
         }
 
-        prompt = f"""
-You are a professional nutritionist AI.
+        prompt = f"""You are a professional nutritionist.
 User Goal: {goal}
-Disease/Condition: {disease or 'None'}
+Disease: {disease or 'None'}
 
-Nutrition Values:
-- Calories: {nutrition.get('calories')} kcal
-- Protein: {nutrition.get('protein')} g
-- Carbohydrates: {nutrition.get('carbohydrates')} g
-- Fats: {nutrition.get('fats')} g
-- Fiber: {nutrition.get('fiber')} g
-- Sugars: {nutrition.get('sugars')} g
-- Sodium: {nutrition.get('sodium')} mg
+Nutrition:
+- Calories: {nutrition['calories']} kcal
+- Protein: {nutrition['protein']}g
+- Carbs: {nutrition['carbohydrates']}g
+- Fats: {nutrition['fats']}g
+- Fiber: {nutrition['fiber']}g
+- Sugars: {nutrition['sugars']}g
+- Sodium: {nutrition['sodium']}mg
 
-Give response in this exact numbered format:
+Respond in this exact format:
 1. Health Verdict (Healthy / Unhealthy / Moderate)
 2. Reason (2-3 lines)
-3. 4-5 practical suggestions based on goal and disease
-"""
+3. 4-5 practical suggestions"""
 
         response = gemini_model.generate_content(prompt)
-        ai_text = response.text if response else "Sorry, AI recommendation is currently unavailable."
-
-        return {
-            "recommendations": [ai_text],
-            "goal": goal,
-            "disease": disease
-        }
+        return {"recommendations": [response.text]}
 
     except Exception as e:
-        print(f"❌ Recommend error: {e}")
-        return {"error": "AI recommendation failed. Please try again later."}
+        print(f"Recommend Error: {e}")
+        return {"error": "Recommendation failed"}
 
-
-# ====================== RUN SERVER ======================
 if __name__ == "__main__":
+    import uvicorn
     port = int(os.environ.get("PORT", 7860))
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=port)

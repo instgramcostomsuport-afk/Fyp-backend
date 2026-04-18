@@ -132,15 +132,18 @@ from predict_nutrient import predict_nutrients
 from download_model import download_model
 import google.generativeai as genai
 import os
-import uvicorn
 
 # ====================== FASTAPI APP ======================
 app = FastAPI(title="NutriScan AI Backend")
 
-# ====================== CORS (Must be at the top) ======================
+# ====================== CORS (Important - Updated with your Netlify URL) ======================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],           # Change to your frontend URL in production
+    allow_origins=[
+        "https://fyp-project1.netlify.app",   # Your actual frontend
+        "http://localhost:3000",
+        "http://localhost:5173"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -170,23 +173,17 @@ async def startup_event():
 # ====================== ROUTES ======================
 @app.get("/")
 async def home():
-    return {
-        "message": "NutriScan AI Backend is running successfully!",
-        "status": "healthy"
-    }
+    return {"message": "NutriScan AI Backend is running successfully!", "status": "healthy"}
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...), weight: float = Form(...)):
     try:
-        # Save uploaded file temporarily
         file_location = f"temp_{file.filename}"
         with open(file_location, "wb") as f:
             f.write(await file.read())
 
-        # Get prediction
         result = predict_nutrients(file_location, weight)
 
-        # Clean up
         if os.path.exists(file_location):
             os.remove(file_location)
 
@@ -219,7 +216,6 @@ async def recommend(
             "sodium": float(sodium)
         }
 
-        # Generate AI recommendation
         prompt = f"""
 You are a professional nutritionist AI.
 User Goal: {goal}

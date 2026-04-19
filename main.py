@@ -218,7 +218,7 @@ async def predict(file: UploadFile = File(...), weight: float = Form(...)):
         if file_location and os.path.exists(file_location):
             os.remove(file_location)
 
-# ==================== RECOMMEND ====================
+==================== RECOMMEND ====================
 @app.post("/recommend")
 async def recommend(
     calories: float = Form(0.0),
@@ -229,42 +229,27 @@ async def recommend(
     sugars: float = Form(0.0),
     sodium: float = Form(0.0),
     goal: str = Form("maintain"),
-    disease: str = Form("none")
+    disease: str = Form(None)
 ):
     try:
         nutrition = {
-            "calories": calories, "protein": protein, "carbohydrates": carbohydrates,
-            "fats": fats, "fiber": fiber, "sugars": sugars, "sodium": sodium
+            "calories": float(calories),
+            "protein": float(protein),
+            "carbohydrates": float(carbohydrates),
+            "fats": float(fats),
+            "fiber": float(fiber),
+            "sugars": float(sugars),
+            "sodium": float(sodium)
         }
-        prompt = f"""You are a professional nutritionist.
-User Goal: {goal}
-Disease: {disease or 'None'}
-Nutrition:
-- Calories: {nutrition['calories']} kcal
-- Protein: {nutrition['protein']}g
-- Carbs: {nutrition['carbohydrates']}g
-- Fats: {nutrition['fats']}g
-- Fiber: {nutrition['fiber']}g
-- Sugars: {nutrition['sugars']}g
-- Sodium: {nutrition['sodium']}mg
-Respond in this exact format:
-1. Health Verdict (Healthy / Unhealthy / Moderate)
-2. Reason (2-3 lines)
-3. 4-5 practical suggestions"""
-
-        # New SDK call
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",   # Current best fast model in 2026
-            contents=prompt
-        )
-
-        return {"recommendations": [response.text]}
-
+        ai_response = generate_ai_recommendation(nutrition, goal, disease)
+        return {
+            "recommendations": [ai_response],
+            "goal": goal,
+            "disease": disease
+        }
     except Exception as e:
-        print(f"Recommend Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return {"error": "Recommendation failed. Please try again later."}
+        print(f"Recommend error: {e}")
+        return {"error": str(e)}
 
 if __name__ == "__main__":
     import uvicorn

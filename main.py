@@ -162,11 +162,14 @@ print("✅ Gemini configured")
 @app.on_event("startup")
 async def startup_event():
     try:
-        print("📥 Downloading model...")
-        download_model()
-        print("✅ Model ready!")
+        print("📥 Starting model download & load...")
+        global nutri_model                  # global bana lo
+        nutri_model = download_model()      # ab yeh model return karega
+        print("✅ Model ready and loaded!")
     except Exception as e:
-        print(f"Model error: {e}")
+        print(f"❌ Critical Model Error: {e}")
+        import traceback
+        traceback.print_exc()
 
 # ==================== ROUTES ====================
 @app.get("/")

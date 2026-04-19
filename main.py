@@ -126,20 +126,23 @@
 
 
 
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from predict_nutrient import predict_nutrients
+from predict_nutrients import predict_nutrients
 from download_model import download_model
 import google.generativeai as genai
 import os
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+import traceback
 
 app = FastAPI(title="NutriScan AI Backend")
 
-# ==================== CORS (Fixed for your Netlify) ====================
+# ==================== CORS ====================
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://fyp-project1.netlify.app",   # ← Your frontend
+        "https://fyp-project1.netlify.app",
         "http://localhost:3000",
         "http://localhost:5173"
     ],
@@ -148,51 +151,76 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ==================== GEMINI SETUP ====================
+# ==================== GEMINI SETUP (keep for now, but plan to update later) ====================
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     raise ValueError("❌ GEMINI_API_KEY is not set!")
-
 genai.configure(api_key=GEMINI_API_KEY)
-gemini_model = genai.GenerativeModel("gemini-2.5-flash")
-
+gemini_model = genai.GenerativeModel("gemini-1.5-flash")   # fixed model name
 print("✅ Gemini configured")
+
+# Thread pool for heavy ML inference
+executor = ThreadPoolExecutor(max_workers=2)
+
+# Global model
+nutri_model = None
 
 # ==================== STARTUP ====================
 @app.on_event("startup")
 async def startup_event():
+    global nutri_model
     try:
         print("📥 Starting model download & load...")
-        global nutri_model                  # global bana lo
-        nutri_model = download_model()      # ab yeh model return karega
+        nutri_model = download_model()
         print("✅ Model ready and loaded!")
     except Exception as e:
         print(f"❌ Critical Model Error: {e}")
-        import traceback
         traceback.print_exc()
 
-# ==================== ROUTES ====================
+# ==================== HEALTH CHECK (important for Railway) ====================
+@app.get("/health")
+async def health():
+    if nutri_model is not None:
+        return {"status": "healthy", "model": "loaded"}
+    return {"status": "loading"}, 503
+
 @app.get("/")
 async def home():
     return {"message": "Backend is running!", "status": "ok"}
 
+# ==================== PREDICT ENDPOINT (Fixed for timeout) ====================
 @app.post("/predict")
 async def predict(file: UploadFile = File(...), weight: float = Form(...)):
     try:
+        # Save uploaded file
         file_location = f"temp_{file.filename}"
         with open(file_location, "wb") as f:
             f.write(await file.read())
 
-        result = predict_nutrients(file_location, weight)
+        # Run heavy prediction in separate thread (this prevents 502)
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            executor, 
+            predict_nutrients, 
+            file_location, 
+            weight
+        )
 
+        # Clean up temp file
         if os.path.exists(file_location):
             os.remove(file_location)
 
         return result
-    except Exception as e:
-        print(f"Predict Error: {e}")
-        return {"error": str(e)}
 
+    except Exception as e:
+        error_detail = traceback.format_exc()
+        print(f"Predict Error: {e}\n{error_detail}")
+        return {
+            "error": "Prediction failed. Check backend logs for details.",
+            "detail": str(e)
+        }
+
+# ==================== RECOMMEND ENDPOINT ====================
 @app.post("/recommend")
 async def recommend(
     calories: float = Form(0.0),
@@ -210,11 +238,9 @@ async def recommend(
             "calories": calories, "protein": protein, "carbohydrates": carbohydrates,
             "fats": fats, "fiber": fiber, "sugars": sugars, "sodium": sodium
         }
-
         prompt = f"""You are a professional nutritionist.
 User Goal: {goal}
 Disease: {disease or 'None'}
-
 Nutrition:
 - Calories: {nutrition['calories']} kcal
 - Protein: {nutrition['protein']}g
@@ -223,7 +249,6 @@ Nutrition:
 - Fiber: {nutrition['fiber']}g
 - Sugars: {nutrition['sugars']}g
 - Sodium: {nutrition['sodium']}mg
-
 Respond in this exact format:
 1. Health Verdict (Healthy / Unhealthy / Moderate)
 2. Reason (2-3 lines)
@@ -234,9 +259,9 @@ Respond in this exact format:
 
     except Exception as e:
         print(f"Recommend Error: {e}")
-        return {"error": "Recommendation failed"}
+        return {"error": "Recommendation failed. Please try again."}
 
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 7860))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=port, timeout_keep_alive=120)

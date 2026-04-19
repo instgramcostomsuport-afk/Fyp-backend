@@ -130,15 +130,17 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from predict_nutrient import predict_nutrients
 from download_model import download_model
-import google.generativeai as genai
 import os
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import traceback
 
+# ==================== NEW GEMINI SDK ====================
+from google import genai
+
 app = FastAPI(title="NutriScan AI Backend")
 
-# ==================== CORS (placed early) ====================
+# ==================== CORS ====================
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -151,15 +153,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ==================== GEMINI SETUP ====================
-# ==================== GEMINI SETUP (NEW SDK - 2026) ====================
-# ==================== GEMINI SETUP ====================
+# ==================== GEMINI SETUP (NEW SDK 2026) ====================
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     raise ValueError("❌ GEMINI_API_KEY is not set!")
-genai.configure(api_key=GEMINI_API_KEY)
-gemini_model = genai.GenerativeModel("gemini-2.5-flash")
-print("✅ Gemini configured")
+
+client = genai.Client(api_key=GEMINI_API_KEY)
+print("✅ Gemini (new SDK) configured")
+
+# Thread pool to prevent timeout on heavy ML inference
+executor = ThreadPoolExecutor(max_workers=2)
+
+# Global model
+nutri_model = None
 
 # ==================== STARTUP ====================
 @app.on_event("startup")
@@ -184,41 +190,43 @@ async def health():
 async def home():
     return {"message": "Backend is running!", "status": "ok"}
 
-# ==================== PREDICT (Fixed for long inference) ====================
+# ==================== PREDICT ENDPOINT ====================
 @app.post("/predict")
 async def predict(file: UploadFile = File(...), weight: float = Form(...)):
     file_location = None
     try:
-        # Save file
+        # Save uploaded file
         file_location = f"temp_{file.filename}"
         with open(file_location, "wb") as f:
             f.write(await file.read())
 
         print(f"📸 Image saved: {file_location}, size: {os.path.getsize(file_location)} bytes")
 
-        # Run heavy prediction in background thread
+        # Run slow prediction in background thread
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             executor, predict_nutrients, file_location, weight
         )
 
         print("✅ Prediction completed successfully")
-
         return result
 
     except Exception as e:
         error_detail = traceback.format_exc()
         print(f"❌ Predict Error: {e}\n{error_detail}")
         return {
-            "error": "Prediction failed or timed out",
+            "error": "Prediction failed",
             "detail": str(e)
         }
     finally:
-        # Always clean up temp file
+        # Clean up temp file
         if file_location and os.path.exists(file_location):
-            os.remove(file_location)
+            try:
+                os.remove(file_location)
+            except:
+                pass
 
-# ==================== RECOMMEND ====================
+# ==================== RECOMMEND ENDPOINT (Fixed with new Gemini) ====================
 @app.post("/recommend")
 async def recommend(
     calories: float = Form(0.0),
@@ -229,7 +237,7 @@ async def recommend(
     sugars: float = Form(0.0),
     sodium: float = Form(0.0),
     goal: str = Form("maintain"),
-    disease: str = Form(None)
+    disease: str = Form("none")
 ):
     try:
         nutrition = {
@@ -241,23 +249,49 @@ async def recommend(
             "sugars": float(sugars),
             "sodium": float(sodium)
         }
-        ai_response = generate_ai_recommendation(nutrition, goal, disease)
+
+        prompt = f"""You are a professional nutritionist.
+User Goal: {goal}
+Disease: {disease or 'None'}
+Nutrition:
+- Calories: {nutrition['calories']} kcal
+- Protein: {nutrition['protein']}g
+- Carbs: {nutrition['carbohydrates']}g
+- Fats: {nutrition['fats']}g
+- Fiber: {nutrition['fiber']}g
+- Sugars: {nutrition['sugars']}g
+- Sodium: {nutrition['sodium']}mg
+
+Respond in this exact format:
+1. Health Verdict (Healthy / Unhealthy / Moderate)
+2. Reason (2-3 lines)
+3. 4-5 practical suggestions"""
+
+        # New Gemini SDK call
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
+
         return {
-            "recommendations": [ai_response],
+            "recommendations": [response.text],
             "goal": goal,
             "disease": disease
         }
+
     except Exception as e:
-        print(f"Recommend error: {e}")
-        return {"error": str(e)}
+        print(f"Recommend Error: {e}")
+        traceback.print_exc()
+        return {"error": "Recommendation failed. Please try again."}
+
 
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 7860))
     uvicorn.run(
-        app, 
-        host="0.0.0.0", 
+        app,
+        host="0.0.0.0",
         port=port,
-        timeout_keep_alive=120,   # Important for long requests
+        timeout_keep_alive=120,
         log_level="info"
     )

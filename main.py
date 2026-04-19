@@ -128,7 +128,7 @@
 
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from predict_nutrient import predict_nutrient
+from predict_nutrient import predict_nutrients
 from download_model import download_model
 import google.generativeai as genai
 import os

@@ -152,12 +152,16 @@ app.add_middleware(
 )
 
 # ==================== GEMINI SETUP ====================
+# ==================== GEMINI SETUP (NEW SDK - 2026) ====================
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     raise ValueError("❌ GEMINI_API_KEY is not set!")
-genai.configure(api_key=GEMINI_API_KEY)
-gemini_model = genai.GenerativeModel("gemini-1.5-flash")
-print("✅ Gemini configured")
+
+from google import genai
+from google.genai import types
+
+client = genai.Client(api_key=GEMINI_API_KEY)
+print("✅ Gemini (new SDK) configured")
 
 # Thread pool to run slow ML inference without blocking
 executor = ThreadPoolExecutor(max_workers=2)
@@ -256,12 +260,19 @@ Respond in this exact format:
 2. Reason (2-3 lines)
 3. 4-5 practical suggestions"""
 
-        response = gemini_model.generate_content(prompt)
+        # New SDK call
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",   # Current best fast model in 2026
+            contents=prompt
+        )
+
         return {"recommendations": [response.text]}
 
     except Exception as e:
         print(f"Recommend Error: {e}")
-        return {"error": "Recommendation failed"}
+        import traceback
+        traceback.print_exc()
+        return {"error": "Recommendation failed. Please try again later."}
 
 if __name__ == "__main__":
     import uvicorn

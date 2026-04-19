@@ -218,7 +218,7 @@ async def predict(file: UploadFile = File(...), weight: float = Form(...)):
         if file_location and os.path.exists(file_location):
             os.remove(file_location)
 
-==================== RECOMMEND ====================
+# ==================== RECOMMEND ====================
 @app.post("/recommend")
 async def recommend(
     calories: float = Form(0.0),

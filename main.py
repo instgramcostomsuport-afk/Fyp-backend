@@ -126,7 +126,7 @@
 
 
 
-from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from predict_nutrients import predict_nutrients
 from download_model import download_model
@@ -138,7 +138,7 @@ import traceback
 
 app = FastAPI(title="NutriScan AI Backend")
 
-# ==================== CORS ====================
+# ==================== CORS (placed early) ====================
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -151,15 +151,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ==================== GEMINI SETUP (keep for now, but plan to update later) ====================
+# ==================== GEMINI SETUP ====================
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     raise ValueError("❌ GEMINI_API_KEY is not set!")
 genai.configure(api_key=GEMINI_API_KEY)
-gemini_model = genai.GenerativeModel("gemini-1.5-flash")   # fixed model name
+gemini_model = genai.GenerativeModel("gemini-1.5-flash")
 print("✅ Gemini configured")
 
-# Thread pool for heavy ML inference
+# Thread pool to run slow ML inference without blocking
 executor = ThreadPoolExecutor(max_workers=2)
 
 # Global model
@@ -177,7 +177,7 @@ async def startup_event():
         print(f"❌ Critical Model Error: {e}")
         traceback.print_exc()
 
-# ==================== HEALTH CHECK (important for Railway) ====================
+# ==================== HEALTH CHECK ====================
 @app.get("/health")
 async def health():
     if nutri_model is not None:
@@ -188,39 +188,41 @@ async def health():
 async def home():
     return {"message": "Backend is running!", "status": "ok"}
 
-# ==================== PREDICT ENDPOINT (Fixed for timeout) ====================
+# ==================== PREDICT (Fixed for long inference) ====================
 @app.post("/predict")
 async def predict(file: UploadFile = File(...), weight: float = Form(...)):
+    file_location = None
     try:
-        # Save uploaded file
+        # Save file
         file_location = f"temp_{file.filename}"
         with open(file_location, "wb") as f:
             f.write(await file.read())
 
-        # Run heavy prediction in separate thread (this prevents 502)
+        print(f"📸 Image saved: {file_location}, size: {os.path.getsize(file_location)} bytes")
+
+        # Run heavy prediction in background thread
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
-            executor, 
-            predict_nutrients, 
-            file_location, 
-            weight
+            executor, predict_nutrients, file_location, weight
         )
 
-        # Clean up temp file
-        if os.path.exists(file_location):
-            os.remove(file_location)
+        print("✅ Prediction completed successfully")
 
         return result
 
     except Exception as e:
         error_detail = traceback.format_exc()
-        print(f"Predict Error: {e}\n{error_detail}")
+        print(f"❌ Predict Error: {e}\n{error_detail}")
         return {
-            "error": "Prediction failed. Check backend logs for details.",
+            "error": "Prediction failed or timed out",
             "detail": str(e)
         }
+    finally:
+        # Always clean up temp file
+        if file_location and os.path.exists(file_location):
+            os.remove(file_location)
 
-# ==================== RECOMMEND ENDPOINT ====================
+# ==================== RECOMMEND ====================
 @app.post("/recommend")
 async def recommend(
     calories: float = Form(0.0),
@@ -259,9 +261,15 @@ Respond in this exact format:
 
     except Exception as e:
         print(f"Recommend Error: {e}")
-        return {"error": "Recommendation failed. Please try again."}
+        return {"error": "Recommendation failed"}
 
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 7860))
-    uvicorn.run(app, host="0.0.0.0", port=port, timeout_keep_alive=120)
+    uvicorn.run(
+        app, 
+        host="0.0.0.0", 
+        port=port,
+        timeout_keep_alive=120,   # Important for long requests
+        log_level="info"
+    )
